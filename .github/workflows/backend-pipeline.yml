@@ -1,13 +1,13 @@
 name: Backend Infrastructure
 
 on:
-  workflow_run:
-    workflows:
-      - "VPC Infrastructure"
-    types:
-      - completed
-
   workflow_dispatch:
+    
+  # workflow_run:
+  #   workflows:
+  #     - "VPC Infrastructure"
+  #   types:
+  #     - completed
 
 permissions:
   id-token: write

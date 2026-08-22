@@ -3,14 +3,14 @@ name: VPC Infrastructure
 on:
   workflow_dispatch:
 
-  push:
-    branches:
-      - main
-    paths:
-      - "Terraform/Root/modules/inftastructure/**"
-      - "Terraform/Root/env/dev/main.tf"
-      - "Terraform/Root/env/dev/backend.tf"
-      - ".github/workflows/vpc-pipeline.yml"
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - "Terraform/Root/modules/inftastructure/**"
+  #     - "Terraform/Root/env/dev/main.tf"
+  #     - "Terraform/Root/env/dev/backend.tf"
+  #     - ".github/workflows/vpc-pipeline.yml"
 
 permissions:
   id-token: write
