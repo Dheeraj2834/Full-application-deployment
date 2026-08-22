@@ -1,0 +1,191 @@
+name: VPC Infrastructure
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+    paths:
+      - "Terraform/Root/modules/inftastructure/**"
+      - "Terraform/Root/env/dev/main.tf"
+      - "Terraform/Root/env/dev/backend.tf"
+      - ".github/workflows/vpc-pipeline.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: "1.14.7"
+  TF_WORKING_DIR: Terraform/Root/env/dev
+
+jobs:
+
+  # ============================================================
+  # TERRAFORM PLAN
+  # ============================================================
+
+  terraform-plan:
+    name: VPC - Terraform Plan
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Checkout
+      # ----------------------------------------------------------
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------
+      # Configure AWS using GitHub OIDC
+      # ----------------------------------------------------------
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      # ----------------------------------------------------------
+      # Setup Terraform
+      # ----------------------------------------------------------
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # ----------------------------------------------------------
+      # Terraform Init
+      # ----------------------------------------------------------
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init
+
+      # ----------------------------------------------------------
+      # Terraform Validate
+      # ----------------------------------------------------------
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform validate
+
+      # ----------------------------------------------------------
+      # Terraform Plan - VPC ONLY
+      # ----------------------------------------------------------
+
+      - name: Terraform Plan - VPC
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan \
+            -target=module.vpc \
+            -out=vpc.tfplan
+
+      # ----------------------------------------------------------
+      # Upload Plan
+      # ----------------------------------------------------------
+
+      - name: Upload VPC Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: vpc-terraform-plan
+          path: ${{ env.TF_WORKING_DIR }}/vpc.tfplan
+          retention-days: 1
+
+
+  # ============================================================
+  # APPROVAL + APPLY
+  # ============================================================
+
+  terraform-apply:
+    name: VPC - Terraform Apply
+    runs-on: ubuntu-latest
+
+    needs:
+      - terraform-plan
+
+    # ------------------------------------------------------------
+    # IMPORTANT:
+    #
+    # Create a GitHub Environment called:
+    #
+    # dev
+    #
+    # Then configure:
+    # Settings
+    # → Environments
+    # → dev
+    # → Required reviewers
+    #
+    # The workflow will pause here for approval.
+    # ------------------------------------------------------------
+
+    environment:
+      name: dev
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Checkout
+      # ----------------------------------------------------------
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------
+      # Configure AWS using GitHub OIDC
+      # ----------------------------------------------------------
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      # ----------------------------------------------------------
+      # Setup Terraform
+      # ----------------------------------------------------------
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # ----------------------------------------------------------
+      # Terraform Init
+      # ----------------------------------------------------------
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init
+
+      # ----------------------------------------------------------
+      # Download Plan
+      # ----------------------------------------------------------
+
+      - name: Download VPC Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: vpc-terraform-plan
+          path: ${{ env.TF_WORKING_DIR }}
+
+      # ----------------------------------------------------------
+      # Terraform Apply - VPC ONLY
+      # ----------------------------------------------------------
+
+      - name: Terraform Apply - VPC
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform apply \
+            -auto-approve \
+            vpc.tfplan
