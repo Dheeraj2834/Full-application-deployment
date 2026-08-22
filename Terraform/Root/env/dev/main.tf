@@ -93,7 +93,7 @@ module "backend_alb" {
 module "database" {
   source = "../../modules/database"
   region   = "us-east-1"
-  project_name = "springboot"
+  project_name = "three-tier"
   identifier   = "Dheeraj"
   allocated_storage = 20
   engine            = "mysql"
