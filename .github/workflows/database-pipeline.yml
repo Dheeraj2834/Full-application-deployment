@@ -1,0 +1,209 @@
+name: Database Infrastructure
+
+on:
+  workflow_run:
+    workflows:
+      - "VPC Infrastructure"
+    types:
+      - completed
+
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: "1.14.7"
+  TF_WORKING_DIR: Terraform/Root/env/dev
+
+jobs:
+
+  # ============================================================
+  # CHECK VPC PIPELINE
+  # ============================================================
+
+  check-vpc:
+    name: Check VPC Pipeline
+    runs-on: ubuntu-latest
+
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success'
+      )
+
+    steps:
+
+      - name: VPC Pipeline Successful
+        run: |
+          echo "=========================================="
+          echo "VPC Pipeline completed successfully"
+          echo "=========================================="
+          echo "Starting Database deployment..."
+
+  # ============================================================
+  # TERRAFORM PLAN
+  # ============================================================
+
+  terraform-plan:
+    name: Database - Terraform Plan
+    runs-on: ubuntu-latest
+
+    needs:
+      - check-vpc
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Checkout Repository
+      # ----------------------------------------------------------
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------
+      # Configure AWS using GitHub OIDC
+      # ----------------------------------------------------------
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      # ----------------------------------------------------------
+      # Setup Terraform
+      # ----------------------------------------------------------
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # ----------------------------------------------------------
+      # Terraform Init
+      # ----------------------------------------------------------
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init
+
+      # ----------------------------------------------------------
+      # Terraform Validate
+      # ----------------------------------------------------------
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform validate
+
+      # ----------------------------------------------------------
+      # Terraform Plan - Database
+      # ----------------------------------------------------------
+
+      - name: Terraform Plan - Database
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan \
+            -target=module.database \
+            -out=database.tfplan
+
+      # ----------------------------------------------------------
+      # Upload Terraform Plan
+      # ----------------------------------------------------------
+
+      - name: Upload Database Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-terraform-plan
+          path: ${{ env.TF_WORKING_DIR }}/database.tfplan
+          retention-days: 1
+
+  # ============================================================
+  # APPROVAL + APPLY
+  # ============================================================
+
+  terraform-apply:
+    name: Database - Terraform Apply
+    runs-on: ubuntu-latest
+
+    needs:
+      - terraform-plan
+
+    # ----------------------------------------------------------
+    # GitHub Environment Approval
+    #
+    # Configure:
+    # GitHub
+    #   → Settings
+    #   → Environments
+    #   → dev
+    #   → Required reviewers
+    # ----------------------------------------------------------
+
+    environment:
+      name: dev
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Checkout Repository
+      # ----------------------------------------------------------
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------
+      # Configure AWS using GitHub OIDC
+      # ----------------------------------------------------------
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      # ----------------------------------------------------------
+      # Setup Terraform
+      # ----------------------------------------------------------
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # ----------------------------------------------------------
+      # Terraform Init
+      # ----------------------------------------------------------
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init
+
+      # ----------------------------------------------------------
+      # Download Database Plan
+      # ----------------------------------------------------------
+
+      - name: Download Database Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: database-terraform-plan
+          path: ${{ env.TF_WORKING_DIR }}
+
+      # ----------------------------------------------------------
+      # Terraform Apply - Database
+      # ----------------------------------------------------------
+
+      - name: Terraform Apply - Database
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform apply \
+            -auto-approve \
+            database.tfplan
