@@ -1,0 +1,240 @@
+name: Frontend to EC2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      ######################################################
+      # Checkout
+      ######################################################
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      ######################################################
+      # SonarQube
+      ######################################################
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=frontend
+            -Dsonar.projectName=frontend
+            -Dsonar.sources=frontend
+
+      ######################################################
+      # Quality Gate
+      ######################################################
+
+      - name: SonarQube Quality Gate
+        uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
+        timeout-minutes: 10
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      ######################################################
+      # Docker Build & Deploy
+      ######################################################
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_KEY }}
+
+          script: |
+            set -e
+
+            APP_DIR=/home/ec2-user/front
+            REPO_NAME=Java-springboot-project
+            REPO_URL=https://github.com/CloudTechDevOps/Java-springboot-project.git
+
+            IMAGE_NAME=frontend
+            CONTAINER_NAME=frontend
+
+            echo "======================================"
+            echo "🚀 FRONTEND DEPLOYMENT STARTED"
+            echo "======================================"
+
+            ##################################################
+            # Install Docker
+            ##################################################
+
+            echo "🐳 Checking Docker..."
+
+            if ! command -v docker &> /dev/null; then
+
+              echo "Installing Docker..."
+
+              sudo dnf install -y docker
+
+              sudo systemctl enable docker
+              sudo systemctl start docker
+
+              sudo usermod -aG docker ec2-user
+
+            else
+
+              echo "Docker already installed."
+
+            fi
+
+            ##################################################
+            # Start Docker
+            ##################################################
+
+            sudo systemctl enable docker
+            sudo systemctl start docker
+
+            echo "Docker version:"
+            sudo docker --version
+
+            echo "Docker service:"
+            sudo systemctl is-active docker
+
+            ##################################################
+            # Clone / Update Repository
+            ##################################################
+
+            mkdir -p $APP_DIR
+            cd $APP_DIR
+
+            if [ -d "$REPO_NAME/.git" ]; then
+
+              echo "Updating existing repository..."
+
+              cd $REPO_NAME
+
+              git fetch origin
+              git reset --hard origin/main
+
+            else
+
+              echo "Cloning repository..."
+
+              git clone $REPO_URL
+
+              cd $REPO_NAME
+
+            fi
+
+            ##################################################
+            # Frontend
+            ##################################################
+
+            cd frontend
+
+            echo "Frontend directory:"
+            pwd
+
+            echo "Frontend files:"
+            ls -la
+
+            ##################################################
+            # Stop Old Container
+            ##################################################
+
+            echo "Stopping old container..."
+
+            sudo docker stop $CONTAINER_NAME || true
+            sudo docker rm $CONTAINER_NAME || true
+
+            ##################################################
+            # Remove Old Image
+            ##################################################
+
+            echo "Removing old image..."
+
+            sudo docker image rm $IMAGE_NAME:latest || true
+
+            ##################################################
+            # Build Docker Image
+            ##################################################
+
+            echo "Building Docker image..."
+
+            sudo docker build \
+              -t $IMAGE_NAME:latest \
+              .
+
+            ##################################################
+            # Run Container
+            ##################################################
+
+            echo "Starting container..."
+
+            sudo docker run -d \
+              --name $CONTAINER_NAME \
+              --restart unless-stopped \
+              -p 8501:8501 \
+              -e API_URL=http://172.31.27.84:8084 \
+              $IMAGE_NAME:latest
+
+            ##################################################
+            # Wait
+            ##################################################
+
+            echo "Waiting for application..."
+
+            sleep 10
+
+            ##################################################
+            # Container Status
+            ##################################################
+
+            echo "======================================"
+            echo "🐳 Docker Containers"
+            echo "======================================"
+
+            sudo docker ps
+
+            ##################################################
+            # Application Logs
+            ##################################################
+
+            echo "======================================"
+            echo "📋 Application Logs"
+            echo "======================================"
+
+            sudo docker logs --tail 50 $CONTAINER_NAME
+
+            ##################################################
+            # Verify Deployment
+            ##################################################
+
+            if sudo docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+
+              echo "======================================"
+              echo "✅ FRONTEND DEPLOYMENT SUCCESSFUL"
+              echo "======================================"
+
+              echo "Application running on:"
+              echo "http://${{ secrets.EC2_HOST }}:8501"
+
+            else
+
+              echo "======================================"
+              echo "❌ FRONTEND DEPLOYMENT FAILED"
+              echo "======================================"
+
+              sudo docker logs $CONTAINER_NAME
+
+              exit 1
+
+            fi
