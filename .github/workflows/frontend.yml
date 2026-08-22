@@ -51,7 +51,7 @@ jobs:
       # Docker Build & Deploy
       ######################################################
 
-      - name: Deploy via SSH
+      - name: Deploy Frontend via SSH
         uses: appleboy/ssh-action@v1.1.0
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -62,8 +62,8 @@ jobs:
             set -e
 
             APP_DIR=/home/ec2-user/front
-            REPO_NAME=Java-springboot-project
-            REPO_URL=https://github.com/CloudTechDevOps/Java-springboot-project.git
+            REPO_NAME=Full-application-deployment
+            REPO_URL=https://github.com/Dheeraj2834/Full-application-deployment.git
 
             IMAGE_NAME=frontend
             CONTAINER_NAME=frontend
@@ -80,7 +80,7 @@ jobs:
 
             if ! command -v docker &> /dev/null; then
 
-              echo "Installing Docker..."
+              echo "Docker not found. Installing..."
 
               sudo dnf install -y docker
 
@@ -105,7 +105,7 @@ jobs:
             echo "Docker version:"
             sudo docker --version
 
-            echo "Docker service:"
+            echo "Docker status:"
             sudo systemctl is-active docker
 
             ##################################################
@@ -117,7 +117,8 @@ jobs:
 
             if [ -d "$REPO_NAME/.git" ]; then
 
-              echo "Updating existing repository..."
+              echo "📥 Repository already exists."
+              echo "Updating repository..."
 
               cd $REPO_NAME
 
@@ -126,7 +127,7 @@ jobs:
 
             else
 
-              echo "Cloning repository..."
+              echo "📥 Cloning repository..."
 
               git clone $REPO_URL
 
@@ -135,22 +136,23 @@ jobs:
             fi
 
             ##################################################
-            # Frontend
+            # Go to Frontend
             ##################################################
 
-            cd frontend
+            cd Application/frontend
 
-            echo "Frontend directory:"
+            echo "======================================"
+            echo "📂 FRONTEND DIRECTORY"
+            echo "======================================"
+
             pwd
-
-            echo "Frontend files:"
             ls -la
 
             ##################################################
-            # Stop Old Container
+            # Stop Existing Container
             ##################################################
 
-            echo "Stopping old container..."
+            echo "🛑 Stopping existing frontend container..."
 
             sudo docker stop $CONTAINER_NAME || true
             sudo docker rm $CONTAINER_NAME || true
@@ -159,7 +161,7 @@ jobs:
             # Remove Old Image
             ##################################################
 
-            echo "Removing old image..."
+            echo "🗑️ Removing old frontend image..."
 
             sudo docker image rm $IMAGE_NAME:latest || true
 
@@ -167,17 +169,17 @@ jobs:
             # Build Docker Image
             ##################################################
 
-            echo "Building Docker image..."
+            echo "🔨 Building frontend Docker image..."
 
             sudo docker build \
               -t $IMAGE_NAME:latest \
               .
 
             ##################################################
-            # Run Container
+            # Run Docker Container
             ##################################################
 
-            echo "Starting container..."
+            echo "🚀 Starting frontend container..."
 
             sudo docker run -d \
               --name $CONTAINER_NAME \
@@ -190,26 +192,26 @@ jobs:
             # Wait
             ##################################################
 
-            echo "Waiting for application..."
+            echo "⏳ Waiting for Streamlit..."
 
             sleep 10
 
             ##################################################
-            # Container Status
+            # Docker Status
             ##################################################
 
             echo "======================================"
-            echo "🐳 Docker Containers"
+            echo "🐳 DOCKER STATUS"
             echo "======================================"
 
             sudo docker ps
 
             ##################################################
-            # Application Logs
+            # Container Logs
             ##################################################
 
             echo "======================================"
-            echo "📋 Application Logs"
+            echo "📋 FRONTEND LOGS"
             echo "======================================"
 
             sudo docker logs --tail 50 $CONTAINER_NAME
@@ -224,8 +226,7 @@ jobs:
               echo "✅ FRONTEND DEPLOYMENT SUCCESSFUL"
               echo "======================================"
 
-              echo "Application running on:"
-              echo "http://${{ secrets.EC2_HOST }}:8501"
+              echo "Streamlit running on port 8501"
 
             else
 
