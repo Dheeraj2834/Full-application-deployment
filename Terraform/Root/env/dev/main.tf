@@ -94,7 +94,7 @@ module "database" {
   source = "../../modules/database"
   region   = "us-east-1"
   project_name = "three-tier"
-  identifier   = "Dheeraj"
+  identifier   = "dheeraj"
   allocated_storage = 20
   engine            = "mysql"
   engine_version    = "8.0"
