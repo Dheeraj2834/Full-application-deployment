@@ -16,38 +16,54 @@ env:
 
 jobs:
 
+  # ============================================================
+  # TERRAFORM INIT + PLAN
+  # ============================================================
+
   terraform-plan:
     name: Terraform Init & Plan
     runs-on: ubuntu-latest
 
     steps:
 
-      # 1. Checkout
+      # 1. Checkout source code
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Configure AWS using OIDC
+
+      # 2. Configure AWS using GitHub OIDC
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 3. Setup Terraform
+
+      # 3. Install Terraform
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+
       # 4. Terraform Init
+      # Initializes S3 backend and state locking
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init
+        run: |
+          terraform init
+
 
       # 5. Terraform Validate
       - name: Terraform Validate
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform validate
+        run: |
+          terraform validate
+
+
+      # ========================================================
+      # TARGETED PLANS
+      # ========================================================
 
       # 6. VPC Plan
       - name: Plan VPC
@@ -57,6 +73,7 @@ jobs:
             -target=module.vpc \
             -out=vpc.tfplan
 
+
       # 7. Bastion Host Plan
       - name: Plan Bastion Host
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -64,6 +81,7 @@ jobs:
           terraform plan \
             -target=module.bastionhost \
             -out=bastion.tfplan
+
 
       # 8. Frontend Plan
       - name: Plan Frontend
@@ -73,6 +91,7 @@ jobs:
             -target=module.frontend \
             -out=frontend.tfplan
 
+
       # 9. Backend Plan
       - name: Plan Backend
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -81,7 +100,21 @@ jobs:
             -target=module.backend \
             -out=backend.tfplan
 
-      # 10. Upload all plans
+
+      # 10. Database Plan
+      - name: Plan Database
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan \
+            -target=module.database \
+            -out=database.tfplan
+
+
+      # ========================================================
+      # SAVE ALL TERRAFORM PLANS
+      # ========================================================
+
+      # 11. Upload all plans as one artifact
       - name: Upload Terraform Plans
         uses: actions/upload-artifact@v4
         with:
@@ -91,7 +124,12 @@ jobs:
             ${{ env.TF_WORKING_DIR }}/bastion.tfplan
             ${{ env.TF_WORKING_DIR }}/frontend.tfplan
             ${{ env.TF_WORKING_DIR }}/backend.tfplan
+            ${{ env.TF_WORKING_DIR }}/database.tfplan
 
+
+  # ============================================================
+  # TERRAFORM APPLY
+  # ============================================================
 
   terraform-apply:
     name: Terraform Apply
@@ -99,60 +137,97 @@ jobs:
 
     needs: terraform-plan
 
+    # ==========================================================
+    # IMPORTANT:
+    # GitHub will WAIT here until the required reviewer
+    # approves the "dev" environment.
+    # ==========================================================
+
     environment:
       name: dev
 
     steps:
 
-      # 1. Checkout
+      # 1. Checkout source code
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Configure AWS
+
+      # 2. Configure AWS using GitHub OIDC
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 3. Setup Terraform
+
+      # 3. Install Terraform
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+
       # 4. Terraform Init
+      # Connects to the same S3 backend
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init
+        run: |
+          terraform init
 
-      # 5. Download plans
+
+      # 5. Download the plans generated during Plan job
       - name: Download Terraform Plans
         uses: actions/download-artifact@v4
         with:
           name: terraform-plans
           path: ${{ env.TF_WORKING_DIR }}
 
+
+      # ========================================================
+      # APPLY IN ORDER
+      # ========================================================
+
       # 6. Apply VPC
       - name: Apply VPC
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          terraform apply -auto-approve vpc.tfplan
+          terraform apply \
+            -auto-approve \
+            vpc.tfplan
+
 
       # 7. Apply Bastion Host
       - name: Apply Bastion Host
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          terraform apply -auto-approve bastion.tfplan
+          terraform apply \
+            -auto-approve \
+            bastion.tfplan
+
 
       # 8. Apply Frontend
       - name: Apply Frontend
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          terraform apply -auto-approve frontend.tfplan
+          terraform apply \
+            -auto-approve \
+            frontend.tfplan
+
 
       # 9. Apply Backend
       - name: Apply Backend
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          terraform apply -auto-approve backend.tfplan
+          terraform apply \
+            -auto-approve \
+            backend.tfplan
+
+
+      # 10. Apply Database
+      - name: Apply Database
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform apply \
+            -auto-approve \
+            database.tfplan
