@@ -3,7 +3,7 @@
 module "vpc" {
   source = "../../modules/inftastructure"
   vpc_region = "us-east-1"
-vpc_name   = "Ecommerse-VPC"
+vpc_name   = "Dheeraj-VPC"
 vpc_cidr   = "10.0.0.0/16"
 
 az_1a = "us-east-1a"
@@ -31,7 +31,7 @@ module "bastionhost" {
   region = "us-east-1"
   ami = "ami-004f790b835b26145"
   instance_type = "t3.micro"
-  key_name = "Ecommerce"
+  key_name = "Dhe"
   subnet_id = module.vpc.public_subnets[0]
   security_group_id = module.vpc.bastion_sg_id
 }
@@ -44,7 +44,7 @@ module "frontend" {
   region = "us-east-1"
   ami = "ami-004f790b835b26145"
   instance_type = "t3.micro"
-  key_name = "Ecommerce"
+  key_name = "Dhe"
   subnet_id = module.vpc.private_web_subnets[0]
   security_group_id = module.vpc.frontend_server_sg_id
 }
@@ -57,7 +57,7 @@ module "backend" {
   region = "us-east-1"
   ami = "ami-004f790b835b26145"
   instance_type = "t3.micro"
-  key_name = "Ecommerce"
+  key_name = "Dhe"
   subnet_id = module.vpc.private_app_subnets[0]
   security_group_id = module.vpc.backend_server_sg_id
 }
@@ -93,14 +93,14 @@ module "backend_alb" {
 module "database" {
   source = "../../modules/database"
   region   = "us-east-1"
-  project_name = "three-tier"
-  identifier   = "ecommerce"
+  project_name = "Springboot"
+  identifier   = "Dheeraj"
   allocated_storage = 20
   engine            = "mysql"
   engine_version    = "8.0"
   instance_class    = "db.t3.micro"
   multi_az          = false
-  db_name           = "Ecommerce"
+  db_name           = "Springboot"
   db_username       = "admin"
   db_password       = "Cloud123"
   db_subnet_1_id    = module.vpc.private_db_subnets[0]
@@ -117,7 +117,7 @@ module "frontend_launchtemplate" {
   project_name   = "three-tier"
   instance_type  = "t3.micro"
   frontend_sg_id = module.vpc.frontend_server_sg_id
-  key_name       = "Ecommerce"
+  key_name       = "Dhe"
   instanceid = module.frontend.frontend_instance_id
 }
 
@@ -150,7 +150,7 @@ module "backend_launchtemplate" {
   project_name   = "three-tier"
   instance_type  = "t3.micro"
   backend_sg_id  = module.vpc.backend_server_sg_id
-  key_name       = "Ecommerce"
+  key_name       = "Dhe"
   instanceid = module.backend.backend_instance_id
 }
 
