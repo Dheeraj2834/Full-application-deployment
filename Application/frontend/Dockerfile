@@ -2,11 +2,11 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY requirements.txt /app/
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY . /app
 
 ENV API_URL=http://172.31.27.84:8084
 
