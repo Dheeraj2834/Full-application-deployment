@@ -36,7 +36,7 @@ jobs:
 
 
       # ----------------------------------------------------------
-      # 2. Configure AWS Credentials using OIDC
+      # 2. Configure AWS Credentials using GitHub OIDC
       # ----------------------------------------------------------
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -78,7 +78,7 @@ jobs:
       # ==========================================================
 
       # ----------------------------------------------------------
-      # 6. Plan VPC
+      # 6. VPC Plan
       # ----------------------------------------------------------
       - name: Terraform Plan - VPC
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -89,7 +89,7 @@ jobs:
 
 
       # ----------------------------------------------------------
-      # 7. Plan Bastion Host
+      # 7. Bastion Host Plan
       # ----------------------------------------------------------
       - name: Terraform Plan - Bastion Host
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -100,7 +100,7 @@ jobs:
 
 
       # ----------------------------------------------------------
-      # 8. Plan Frontend
+      # 8. Frontend Plan
       # ----------------------------------------------------------
       - name: Terraform Plan - Frontend
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -111,7 +111,7 @@ jobs:
 
 
       # ----------------------------------------------------------
-      # 9. Plan Backend
+      # 9. Backend Plan
       # ----------------------------------------------------------
       - name: Terraform Plan - Backend
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -122,7 +122,7 @@ jobs:
 
 
       # ----------------------------------------------------------
-      # 10. Plan Database
+      # 10. Database Plan
       # ----------------------------------------------------------
       - name: Terraform Plan - Database
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -133,7 +133,7 @@ jobs:
 
 
       # ==========================================================
-      # UPLOAD PLAN FILES
+      # UPLOAD TERRAFORM PLAN FILES
       # ==========================================================
 
       - name: Upload Terraform Plans
@@ -150,7 +150,7 @@ jobs:
 
 
   # ============================================================
-  # APPROVAL + APPLY
+  # APPROVAL + TERRAFORM APPLY
   # ============================================================
 
   terraform-apply:
@@ -161,18 +161,14 @@ jobs:
       - terraform-plan
 
     # ------------------------------------------------------------
-    # GitHub Environment Protection
+    # GitHub Environment Approval
     #
-    # Configure:
     # Repository Settings
-    #      ↓
-    # Environments
-    #      ↓
-    # dev
-    #      ↓
-    # Required reviewers
+    #   → Environments
+    #   → dev
+    #   → Required reviewers
     #
-    # This job will WAIT for approval before starting.
+    # This job waits here until approved.
     # ------------------------------------------------------------
 
     environment:
@@ -188,7 +184,7 @@ jobs:
 
 
       # ----------------------------------------------------------
-      # 2. Configure AWS Credentials using OIDC
+      # 2. Configure AWS Credentials using GitHub OIDC
       # ----------------------------------------------------------
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -217,7 +213,7 @@ jobs:
 
 
       # ----------------------------------------------------------
-      # 5. Download Plan Files
+      # 5. Download Terraform Plan Files
       # ----------------------------------------------------------
       - name: Download Terraform Plans
         uses: actions/download-artifact@v4
@@ -227,7 +223,7 @@ jobs:
 
 
       # ==========================================================
-      # TERRAFORM APPLY
+      # TERRAFORM APPLY IN ORDER
       # ==========================================================
 
       # ----------------------------------------------------------
