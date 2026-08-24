@@ -1,0 +1,74 @@
+name: Frontend Docker Deployment
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "Application/frontend/**"
+      - ".github/workflows/frontend-docker.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: frontend
+  IMAGE_TAG: latest
+  CONTAINER_NAME: frontend
+  CONTAINER_PORT: 8501
+
+jobs:
+
+  build-and-deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # 1. Checkout source code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Authenticate to AWS using existing OIDC role
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 3. Login to Amazon ECR
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 4. Build Docker image
+      - name: Build frontend Docker image
+        working-directory: Application/frontend
+        run: |
+          docker build \
+            -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
+            .
+
+      # 5. Push Docker image to ECR
+      - name: Push frontend image
+        run: |
+          docker push \
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+      # 6. Deploy container to private EC2 using SSM
+      - name: Deploy frontend to EC2
+        run: |
+          aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy frontend Docker container" \
+            --parameters 'commands=[
+              "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.registry }}",
+              "docker pull ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}",
+              "docker stop ${{ env.CONTAINER_NAME }} || true",
+              "docker rm ${{ env.CONTAINER_NAME }} || true",
+              "docker run -d --name ${{ env.CONTAINER_NAME }} -p 8501:8501 ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+            ]' \
+            --region ${{ env.AWS_REGION }}
