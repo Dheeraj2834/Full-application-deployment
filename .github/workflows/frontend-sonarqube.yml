@@ -14,37 +14,32 @@ permissions:
   contents: read
 
 jobs:
-
   sonarqube:
 
-    name: Frontend SonarQube Scan
     runs-on: ubuntu-latest
 
     steps:
 
-      # ==================================================
-      # 1. Checkout source code
-      # ==================================================
+      # ------------------------------------------
+      # 1. Checkout
+      # ------------------------------------------
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-
-      # ==================================================
-      # 2. Setup Java
-      # SonarScanner requires Java
-      # ==================================================
+      # ------------------------------------------
+      # 2. Java
+      # ------------------------------------------
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-
-      # ==================================================
+      # ------------------------------------------
       # 3. SonarQube Scan
-      # ==================================================
+      # ------------------------------------------
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
         env:
@@ -58,12 +53,30 @@ jobs:
             -Dsonar.sources=.
             -Dsonar.sourceEncoding=UTF-8
 
+      # ------------------------------------------
+      # 4. Check scanner report
+      # ------------------------------------------
+      - name: Check SonarQube scan result
+        run: |
+          echo "Checking SonarQube scanner files..."
 
-      # ==================================================
-      # 4. Quality Gate
-      # ==================================================
+          if [ -f "Application/frontend/.scannerwork/report-task.txt" ]; then
+            echo "SonarQube report found."
+            cat Application/frontend/.scannerwork/report-task.txt
+          else
+            echo "ERROR: SonarQube report not found."
+            echo "Contents of Application/frontend:"
+            ls -la Application/frontend
+            exit 1
+          fi
+
+      # ------------------------------------------
+      # 5. Quality Gate
+      # ------------------------------------------
       - name: SonarQube Quality Gate
         uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
         timeout-minutes: 10
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          scanMetadataReportFile: Application/frontend/.scannerwork/report-task.txt
