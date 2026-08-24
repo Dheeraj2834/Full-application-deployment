@@ -1,12 +1,11 @@
 name: Frontend Docker CI/CD
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "Application/frontend/**"
-      - ".github/workflows/frontend-docker.yml"
+  workflow_run:
+    workflows:
+      - "Frontend SonarQube Quality Check"
+    types:
+      - completed
 
 permissions:
   id-token: write

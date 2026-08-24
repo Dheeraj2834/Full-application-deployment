@@ -1,241 +1,232 @@
-name: Frontend to EC2
+name: Frontend SonarQube + Docker CI/CD
 
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - main
+    paths:
+      - "Application/frontend/**"
+      - ".github/workflows/frontend-ci-cd.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: frontend
+  IMAGE_TAG: latest
+  CONTAINER_NAME: frontend
+  CONTAINER_PORT: 8501
+
 jobs:
-  deploy:
+
+  # ==========================================================
+  # JOB 1: SONARQUBE CODE QUALITY
+  # ==========================================================
+  sonarqube:
+
+    name: SonarQube Code Quality
+
     runs-on: ubuntu-latest
 
     steps:
 
-      ######################################################
-      # Checkout
-      ######################################################
-
+      # --------------------------------------------------------
+      # 1. Checkout
+      # --------------------------------------------------------
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      ######################################################
-      # SonarQube
-      ######################################################
 
-      - name: Set up Java
+      # --------------------------------------------------------
+      # 2. Setup Java
+      # --------------------------------------------------------
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: "17"
 
+
+      # --------------------------------------------------------
+      # 3. SonarQube Scan
+      # --------------------------------------------------------
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
+          projectBaseDir: Application/frontend
           args: >
             -Dsonar.projectKey=frontend
-            -Dsonar.projectName=frontend
-            -Dsonar.sources=frontend
+            -Dsonar.projectName=Frontend
+            -Dsonar.sources=.
+            -Dsonar.sourceEncoding=UTF-8
 
-      ######################################################
-      # Quality Gate
-      ######################################################
 
+      # --------------------------------------------------------
+      # 4. Verify SonarQube Report
+      # --------------------------------------------------------
+      - name: Check SonarQube Scan Result
+        run: |
+
+          echo "Checking SonarQube scanner report..."
+
+          if [ -f "Application/frontend/.scannerwork/report-task.txt" ]; then
+
+            echo "SonarQube report found."
+
+            cat Application/frontend/.scannerwork/report-task.txt
+
+          else
+
+            echo "ERROR: SonarQube report not found."
+
+            ls -la Application/frontend
+
+            exit 1
+
+          fi
+
+
+      # --------------------------------------------------------
+      # 5. SonarQube Quality Gate
+      # --------------------------------------------------------
       - name: SonarQube Quality Gate
         uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
         timeout-minutes: 10
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-      ######################################################
-      # Docker Build & Deploy
-      ######################################################
-
-      - name: Deploy Frontend via SSH
-        uses: appleboy/ssh-action@v1.1.0
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_KEY }}
+          scanMetadataReportFile: Application/frontend/.scannerwork/report-task.txt
 
-          script: |
-            set -e
 
-            APP_DIR=/home/ec2-user/front
-            REPO_NAME=Full-application-deployment
-            REPO_URL=https://github.com/Dheeraj2834/Full-application-deployment.git
+  # ==========================================================
+  # JOB 2: DOCKER BUILD + ECR + DEPLOY
+  # ==========================================================
+  docker:
 
-            IMAGE_NAME=frontend
-            CONTAINER_NAME=frontend
+    name: Docker Build and Deploy
 
-            echo "======================================"
-            echo "🚀 FRONTEND DEPLOYMENT STARTED"
-            echo "======================================"
+    runs-on: ubuntu-latest
 
-            ##################################################
-            # Install Docker
-            ##################################################
+    # IMPORTANT:
+    # Docker job runs ONLY if SonarQube job succeeds
+    needs: sonarqube
 
-            echo "🐳 Checking Docker..."
+    steps:
 
-            if ! command -v docker &> /dev/null; then
+      # --------------------------------------------------------
+      # 1. Checkout source code
+      # --------------------------------------------------------
+      - name: Checkout source code
+        uses: actions/checkout@v4
 
-              echo "Docker not found. Installing..."
 
-              sudo dnf install -y docker
+      # --------------------------------------------------------
+      # 2. Configure AWS using GitHub OIDC
+      # --------------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-              sudo systemctl enable docker
-              sudo systemctl start docker
 
-              sudo usermod -aG docker ec2-user
+      # --------------------------------------------------------
+      # 3. Verify AWS Identity
+      # --------------------------------------------------------
+      - name: Verify AWS identity
+        run: |
+          aws sts get-caller-identity
 
-            else
 
-              echo "Docker already installed."
+      # --------------------------------------------------------
+      # 4. Create ECR Repository if not exists
+      # --------------------------------------------------------
+      - name: Create ECR repository
+        run: |
 
-            fi
+          aws ecr describe-repositories \
+            --repository-names "${{ env.ECR_REPOSITORY }}" \
+            --region "${{ env.AWS_REGION }}" \
+          || aws ecr create-repository \
+            --repository-name "${{ env.ECR_REPOSITORY }}" \
+            --region "${{ env.AWS_REGION }}"
 
-            ##################################################
-            # Start Docker
-            ##################################################
 
-            sudo systemctl enable docker
-            sudo systemctl start docker
+      # --------------------------------------------------------
+      # 5. Login to Amazon ECR
+      # --------------------------------------------------------
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-            echo "Docker version:"
-            sudo docker --version
 
-            echo "Docker status:"
-            sudo systemctl is-active docker
+      # --------------------------------------------------------
+      # 6. Build Docker Image
+      # --------------------------------------------------------
+      - name: Build frontend Docker image
+        working-directory: Application/frontend
+        run: |
 
-            ##################################################
-            # Clone / Update Repository
-            ##################################################
+          docker build \
+            -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
+            .
 
-            mkdir -p $APP_DIR
-            cd $APP_DIR
 
-            if [ -d "$REPO_NAME/.git" ]; then
+      # --------------------------------------------------------
+      # 7. Verify Docker Image
+      # --------------------------------------------------------
+      - name: Verify Docker image
+        run: |
 
-              echo "📥 Repository already exists."
-              echo "Updating repository..."
+          docker images
 
-              cd $REPO_NAME
 
-              git fetch origin
-              git reset --hard origin/main
+      # --------------------------------------------------------
+      # 8. Push Docker Image to ECR
+      # --------------------------------------------------------
+      - name: Push frontend image to ECR
+        run: |
 
-            else
+          docker push \
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
 
-              echo "📥 Cloning repository..."
 
-              git clone $REPO_URL
+      # --------------------------------------------------------
+      # 9. Deploy to Private EC2 using SSM
+      # --------------------------------------------------------
+      - name: Deploy frontend to EC2
+        run: |
 
-              cd $REPO_NAME
+          aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy frontend Docker container" \
+            --parameters 'commands=[
+              "echo Logging into Amazon ECR...",
+              "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.registry }}",
 
-            fi
+              "echo Pulling latest frontend image...",
+              "docker pull ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}",
 
-            ##################################################
-            # Go to Frontend
-            ##################################################
+              "echo Stopping existing frontend container...",
+              "docker stop ${{ env.CONTAINER_NAME }} || true",
 
-            cd Application/frontend
+              "echo Removing existing frontend container...",
+              "docker rm ${{ env.CONTAINER_NAME }} || true",
 
-            echo "======================================"
-            echo "📂 FRONTEND DIRECTORY"
-            echo "======================================"
+              "echo Starting new frontend container...",
+              "docker run -d --name ${{ env.CONTAINER_NAME }} -p 8501:8501 ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}",
 
-            pwd
-            ls -la
-
-            ##################################################
-            # Stop Existing Container
-            ##################################################
-
-            echo "🛑 Stopping existing frontend container..."
-
-            sudo docker stop $CONTAINER_NAME || true
-            sudo docker rm $CONTAINER_NAME || true
-
-            ##################################################
-            # Remove Old Image
-            ##################################################
-
-            echo "🗑️ Removing old frontend image..."
-
-            sudo docker image rm $IMAGE_NAME:latest || true
-
-            ##################################################
-            # Build Docker Image
-            ##################################################
-
-            echo "🔨 Building frontend Docker image..."
-
-            sudo docker build \
-              -t $IMAGE_NAME:latest \
-              .
-
-            ##################################################
-            # Run Docker Container
-            ##################################################
-
-            echo "🚀 Starting frontend container..."
-
-            sudo docker run -d \
-              --name $CONTAINER_NAME \
-              --restart unless-stopped \
-              -p 8501:8501 \
-              -e API_URL=http://172.31.27.84:8084 \
-              $IMAGE_NAME:latest
-
-            ##################################################
-            # Wait
-            ##################################################
-
-            echo "⏳ Waiting for Streamlit..."
-
-            sleep 10
-
-            ##################################################
-            # Docker Status
-            ##################################################
-
-            echo "======================================"
-            echo "🐳 DOCKER STATUS"
-            echo "======================================"
-
-            sudo docker ps
-
-            ##################################################
-            # Container Logs
-            ##################################################
-
-            echo "======================================"
-            echo "📋 FRONTEND LOGS"
-            echo "======================================"
-
-            sudo docker logs --tail 50 $CONTAINER_NAME
-
-            ##################################################
-            # Verify Deployment
-            ##################################################
-
-            if sudo docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-
-              echo "======================================"
-              echo "✅ FRONTEND DEPLOYMENT SUCCESSFUL"
-              echo "======================================"
-
-              echo "Streamlit running on port 8501"
-
-            else
-
-              echo "======================================"
-              echo "❌ FRONTEND DEPLOYMENT FAILED"
-              echo "======================================"
-
-              sudo docker logs $CONTAINER_NAME
-
-              exit 1
-
-            fi
+              "echo Checking running containers...",
+              "docker ps"
+            ]' \
+            --region "${{ env.AWS_REGION }}"
