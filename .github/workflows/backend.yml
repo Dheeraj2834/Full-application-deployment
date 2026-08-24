@@ -138,16 +138,16 @@ jobs:
       - name: Backend SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
         env:
-          SONAR_TOKEN: ${{ secrets.BACKEND_SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.BACKEND_SONAR_HOST_URL }}
+            SONAR_TOKEN: ${{ secrets.BACKEND_SONAR_TOKEN }}
+            SONAR_HOST_URL: ${{ secrets.BACKEND_SONAR_HOST_URL }}
         with:
-          projectBaseDir: Application/backend
-          args: >
-            -Dsonar.projectKey=backend
-            -Dsonar.projectName=Backend
-            -Dsonar.sources=src
-            -Dsonar.sourceEncoding=UTF-8
-
+            projectBaseDir: Application/backend
+            args: >
+                -Dsonar.projectKey=backend
+                -Dsonar.projectName=Backend
+                -Dsonar.sources=src
+                -Dsonar.java.binaries=target/classes
+                -Dsonar.sourceEncoding=UTF-8
 
       # --------------------------------------------------------
       # 8. Check SonarQube Scanner Report
