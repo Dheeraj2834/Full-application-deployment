@@ -13,7 +13,7 @@ WORKDIR /app
 # Copy the built JAR from the builder stage
 COPY --from=builder /app/target/*.jar app.jar
 
-Set default environment variables (can be overridden at runtime)
+# Set default environment variables (can be overridden at runtime)
 ENV SPRING_DATASOURCE_URL="jdbc:mysql://database-1.c27iko6si6r0.us-east-1.rds.amazonaws.com:3306/datastore?createDatabaseIfNotExist=true"
 ENV SPRING_DATASOURCE_USERNAME="admin"
 ENV SPRING_DATASOURCE_PASSWORD="Cloud123"
