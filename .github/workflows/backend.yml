@@ -3,12 +3,12 @@ name: Backend Maven SonarQube Docker CI/CD
 on:
   workflow_dispatch:
 
-  push:
-    branches:
-      - main
-    paths:
-      - "Application/backend/**"
-      - ".github/workflows/backend-ci-cd.yml"
+#   push:
+#     branches:
+#       - main
+#     paths:
+#       - "Application/backend/**"
+#       - ".github/workflows/backend-ci-cd.yml"
 
 permissions:
   contents: read

@@ -3,12 +3,12 @@ name: Frontend SonarQube + Docker CI/CD
 on:
   workflow_dispatch:
 
-  push:
-    branches:
-      - main
-    paths:
-      - "Application/frontend/**"
-      - ".github/workflows/frontend-ci-cd.yml"
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - "Application/frontend/**"
+  #     - ".github/workflows/frontend-ci-cd.yml"
 
 permissions:
   contents: read
