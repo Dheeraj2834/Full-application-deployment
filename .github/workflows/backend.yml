@@ -1,0 +1,433 @@
+name: Backend Maven SonarQube Docker CI/CD
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+    paths:
+      - "Application/backend/**"
+      - ".github/workflows/backend-ci-cd.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+
+  # ==========================================================
+  # ECR CONFIGURATION
+  # ==========================================================
+  ECR_REPOSITORY: backend
+  IMAGE_TAG: ${{ github.sha }}
+
+  # ==========================================================
+  # BACKEND DOCKER CONFIGURATION
+  # ==========================================================
+  CONTAINER_NAME: backend
+  CONTAINER_PORT: 8084
+
+jobs:
+
+  # ==========================================================
+  # JOB 1
+  # MAVEN BUILD + SONARQUBE
+  # ==========================================================
+  sonarqube:
+
+    name: Backend Maven Build + SonarQube
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # --------------------------------------------------------
+      # 1. Checkout Repository
+      # --------------------------------------------------------
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+
+      # --------------------------------------------------------
+      # 2. Setup Java 17
+      # --------------------------------------------------------
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+
+      # --------------------------------------------------------
+      # 3. Verify Java and Maven
+      # --------------------------------------------------------
+      - name: Verify Java and Maven
+        run: |
+          echo "Java version:"
+          java -version
+
+          echo ""
+          echo "Maven version:"
+          mvn -version
+
+
+      # --------------------------------------------------------
+      # 4. Maven Clean
+      # --------------------------------------------------------
+      - name: Maven Clean
+        working-directory: Application/backend
+        run: |
+          echo "Running Maven clean..."
+
+          mvn clean
+
+
+      # --------------------------------------------------------
+      # 5. Maven Package
+      # --------------------------------------------------------
+      # Currently skipping tests.
+      #
+      # If your tests are ready, change this to:
+      #
+      # mvn package
+      #
+      # --------------------------------------------------------
+      - name: Maven Package
+        working-directory: Application/backend
+        run: |
+          echo "Running Maven package..."
+
+          mvn package -DskipTests
+
+
+      # --------------------------------------------------------
+      # 6. Verify JAR
+      # --------------------------------------------------------
+      - name: Verify Generated JAR
+        working-directory: Application/backend
+        run: |
+
+          echo "========================================"
+          echo "Checking target directory"
+          echo "========================================"
+
+          ls -lah target/
+
+          echo ""
+          echo "Checking for JAR..."
+
+          JAR_FILE=$(find target -maxdepth 1 -type f -name "*.jar" | head -n 1)
+
+          if [ -z "$JAR_FILE" ]; then
+            echo "ERROR: JAR file was not generated."
+            exit 1
+          fi
+
+          echo "JAR generated successfully:"
+          echo "$JAR_FILE"
+
+
+      # --------------------------------------------------------
+      # 7. SonarQube Scan
+      # --------------------------------------------------------
+      - name: Backend SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.BACKEND_SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.BACKEND_SONAR_HOST_URL }}
+        with:
+          projectBaseDir: Application/backend
+          args: >
+            -Dsonar.projectKey=backend
+            -Dsonar.projectName=Backend
+            -Dsonar.sources=src
+            -Dsonar.sourceEncoding=UTF-8
+
+
+      # --------------------------------------------------------
+      # 8. Check SonarQube Scanner Report
+      # --------------------------------------------------------
+      - name: Check SonarQube Report
+        run: |
+
+          echo "========================================"
+          echo "Checking SonarQube scanner report"
+          echo "========================================"
+
+          if [ -f "Application/backend/.scannerwork/report-task.txt" ]; then
+
+            echo "SonarQube report found."
+
+            cat Application/backend/.scannerwork/report-task.txt
+
+          else
+
+            echo "ERROR: SonarQube report not found."
+
+            echo ""
+            echo "Application/backend contents:"
+            ls -lah Application/backend
+
+            exit 1
+
+          fi
+
+
+      # --------------------------------------------------------
+      # 9. SonarQube Quality Gate
+      # --------------------------------------------------------
+      - name: Backend SonarQube Quality Gate
+        uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
+        timeout-minutes: 10
+        env:
+          SONAR_TOKEN: ${{ secrets.BACKEND_SONAR_TOKEN }}
+        with:
+          scanMetadataReportFile: Application/backend/.scannerwork/report-task.txt
+
+
+  # ==========================================================
+  # JOB 2
+  # DOCKER BUILD + ECR + BACKEND EC2 DEPLOYMENT
+  # ==========================================================
+  docker:
+
+    name: Backend Docker Build + Deploy
+
+    runs-on: ubuntu-latest
+
+    # IMPORTANT:
+    #
+    # Docker job will ONLY execute if the complete
+    # SonarQube job succeeds.
+    #
+    # If Quality Gate fails:
+    #
+    # SonarQube → FAILED
+    # Docker     → SKIPPED
+    #
+    needs: sonarqube
+
+    steps:
+
+      # --------------------------------------------------------
+      # 1. Checkout Repository
+      # --------------------------------------------------------
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+
+      # --------------------------------------------------------
+      # 2. Configure AWS using GitHub OIDC
+      # --------------------------------------------------------
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+
+      # --------------------------------------------------------
+      # 3. Verify AWS Identity
+      # --------------------------------------------------------
+      - name: Verify AWS Identity
+        run: |
+
+          echo "AWS identity:"
+
+          aws sts get-caller-identity
+
+
+      # --------------------------------------------------------
+      # 4. Create ECR Repository
+      # --------------------------------------------------------
+      - name: Create ECR Repository
+        run: |
+
+          echo "Checking ECR repository..."
+
+          aws ecr describe-repositories \
+            --repository-names "${{ env.ECR_REPOSITORY }}" \
+            --region "${{ env.AWS_REGION }}"
+
+          if [ $? -eq 0 ]; then
+
+            echo "ECR repository already exists."
+
+          else
+
+            echo "Creating ECR repository..."
+
+            aws ecr create-repository \
+              --repository-name "${{ env.ECR_REPOSITORY }}" \
+              --region "${{ env.AWS_REGION }}"
+
+          fi
+
+
+      # --------------------------------------------------------
+      # 5. Login to Amazon ECR
+      # --------------------------------------------------------
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+
+      # --------------------------------------------------------
+      # 6. Set Docker Image Name
+      # --------------------------------------------------------
+      - name: Set Docker Image
+        run: |
+
+          echo "ECR Registry:"
+          echo "${{ steps.ecr.outputs.registry }}"
+
+          echo "Repository:"
+          echo "${{ env.ECR_REPOSITORY }}"
+
+          echo "Image Tag:"
+          echo "${{ env.IMAGE_TAG }}"
+
+          echo "Full Image:"
+          echo "${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+
+
+      # --------------------------------------------------------
+      # 7. Build Backend Docker Image
+      # --------------------------------------------------------
+      - name: Build Backend Docker Image
+        working-directory: Application/backend
+        run: |
+
+          echo "========================================"
+          echo "Building Backend Docker Image"
+          echo "========================================"
+
+          docker build \
+            -t "${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}" \
+            .
+
+          echo "Docker image built successfully."
+
+
+      # --------------------------------------------------------
+      # 8. Verify Docker Image
+      # --------------------------------------------------------
+      - name: Verify Docker Image
+        run: |
+
+          echo "========================================"
+          echo "Docker Images"
+          echo "========================================"
+
+          docker images
+
+          echo ""
+          echo "Backend image:"
+
+          docker images \
+            "${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}"
+
+
+      # --------------------------------------------------------
+      # 9. Push Docker Image to ECR
+      # --------------------------------------------------------
+      - name: Push Backend Docker Image
+        run: |
+
+          echo "========================================"
+          echo "Pushing Backend Image to ECR"
+          echo "========================================"
+
+          docker push \
+            "${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+
+          echo "Image pushed successfully."
+
+
+      # --------------------------------------------------------
+      # 10. Deploy Backend to Private EC2
+      # --------------------------------------------------------
+      - name: Deploy Backend to Private EC2
+        run: |
+
+          echo "========================================"
+          echo "Starting Backend Deployment"
+          echo "========================================"
+
+          aws ssm send-command \
+            --instance-ids "${{ secrets.BACKEND_EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy Backend Docker Container" \
+            --parameters 'commands=[
+              "echo ========================================",
+              "echo Backend Deployment Started",
+              "echo ========================================",
+
+              "echo Checking Docker...",
+              "docker --version",
+
+              "echo Checking AWS CLI...",
+              "aws --version",
+
+              "echo Logging into Amazon ECR...",
+
+              "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.registry }}",
+
+              "echo ECR login completed.",
+
+              "echo Pulling backend Docker image...",
+
+              "docker pull ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}",
+
+              "echo Docker image pulled successfully.",
+
+              "echo Checking existing backend container...",
+
+              "docker ps -a --filter name=${{ env.CONTAINER_NAME }}",
+
+              "echo Stopping existing backend container...",
+
+              "docker stop ${{ env.CONTAINER_NAME }} || true",
+
+              "echo Removing existing backend container...",
+
+              "docker rm ${{ env.CONTAINER_NAME }} || true",
+
+              "echo Starting new backend container...",
+
+              "docker run -d --restart unless-stopped --name ${{ env.CONTAINER_NAME }} -p ${{ env.CONTAINER_PORT }}:${{ env.CONTAINER_PORT }} ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}",
+
+              "echo Waiting for backend container...",
+
+              "sleep 10",
+
+              "echo Checking backend container status...",
+
+              "docker ps",
+
+              "echo Checking backend container logs...",
+
+              "docker logs --tail 50 ${{ env.CONTAINER_NAME }}",
+
+              "echo ========================================",
+              "echo Backend Deployment Completed",
+              "echo ========================================"
+            ]' \
+            --region "${{ env.AWS_REGION }}"
+
+
+      # --------------------------------------------------------
+      # 11. Deployment Command ID
+      # --------------------------------------------------------
+      - name: Display SSM Command ID
+        run: |
+
+          echo "Backend deployment command submitted to SSM."
+
+          echo "Instance:"
+          echo "${{ secrets.BACKEND_EC2_INSTANCE_ID }}"
