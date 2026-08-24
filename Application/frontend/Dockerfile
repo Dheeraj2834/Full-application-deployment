@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . /app
 
-ENV API_URL=http://docker-644296825.us-east-1.elb.amazonaws.com/
+ENV API_URL=http://backend-1190102713.us-east-1.elb.amazonaws.com
 
 EXPOSE 8501
 
