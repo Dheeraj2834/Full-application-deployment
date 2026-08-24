@@ -1,4 +1,4 @@
-name: Frontend Docker Deployment
+name: Frontend Docker CI/CD
 
 on:
   push:
@@ -27,23 +27,55 @@ jobs:
 
     steps:
 
+      # ==================================================
       # 1. Checkout source code
-      - name: Checkout code
+      # ==================================================
+      - name: Checkout source code
         uses: actions/checkout@v4
 
-      # 2. Authenticate to AWS using existing OIDC role
+
+      # ==================================================
+      # 2. Configure AWS using GitHub OIDC
+      # ==================================================
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 3. Login to Amazon ECR
+
+      # ==================================================
+      # 3. Verify AWS identity
+      # ==================================================
+      - name: Verify AWS identity
+        run: |
+          aws sts get-caller-identity
+
+
+      # ==================================================
+      # 4. Create ECR repository if it doesn't exist
+      # ==================================================
+      - name: Create ECR repository
+        run: |
+          aws ecr describe-repositories \
+            --repository-names "${{ env.ECR_REPOSITORY }}" \
+            --region "${{ env.AWS_REGION }}" \
+          || aws ecr create-repository \
+            --repository-name "${{ env.ECR_REPOSITORY }}" \
+            --region "${{ env.AWS_REGION }}"
+
+
+      # ==================================================
+      # 5. Login to Amazon ECR
+      # ==================================================
       - name: Login to Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 4. Build Docker image
+
+      # ==================================================
+      # 6. Build Docker image
+      # ==================================================
       - name: Build frontend Docker image
         working-directory: Application/frontend
         run: |
@@ -51,24 +83,51 @@ jobs:
             -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
             .
 
-      # 5. Push Docker image to ECR
-      - name: Push frontend image
+
+      # ==================================================
+      # 7. Verify Docker image
+      # ==================================================
+      - name: Verify Docker image
+        run: |
+          docker images
+
+
+      # ==================================================
+      # 8. Push Docker image to ECR
+      # ==================================================
+      - name: Push frontend image to ECR
         run: |
           docker push \
             ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
 
-      # 6. Deploy container to private EC2 using SSM
+
+      # ==================================================
+      # 9. Deploy to private EC2 using SSM
+      # ==================================================
       - name: Deploy frontend to EC2
         run: |
+
           aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy frontend Docker container" \
             --parameters 'commands=[
+              "echo Logging into Amazon ECR...",
               "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.registry }}",
+
+              "echo Pulling latest frontend image...",
               "docker pull ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}",
+
+              "echo Stopping existing frontend container...",
               "docker stop ${{ env.CONTAINER_NAME }} || true",
+
+              "echo Removing existing frontend container...",
               "docker rm ${{ env.CONTAINER_NAME }} || true",
-              "docker run -d --name ${{ env.CONTAINER_NAME }} -p 8501:8501 ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+
+              "echo Starting new frontend container...",
+              "docker run -d --name ${{ env.CONTAINER_NAME }} -p 8501:8501 ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}",
+
+              "echo Checking running containers...",
+              "docker ps"
             ]' \
-            --region ${{ env.AWS_REGION }}
+            --region "${{ env.AWS_REGION }}"
