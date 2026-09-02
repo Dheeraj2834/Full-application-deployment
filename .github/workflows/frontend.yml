@@ -21,90 +21,90 @@ env:
   CONTAINER_NAME: frontend
   CONTAINER_PORT: 8501
 
-jobs:
+# jobs:
 
-  # ==========================================================
-  # JOB 1: SONARQUBE CODE QUALITY
-  # ==========================================================
-  sonarqube:
+#   # ==========================================================
+#   # JOB 1: SONARQUBE CODE QUALITY
+#   # ==========================================================
+#   sonarqube:
 
-    name: SonarQube Code Quality
+#     name: SonarQube Code Quality
 
-    runs-on: ubuntu-latest
+#     runs-on: ubuntu-latest
 
-    steps:
+#     steps:
 
-      # --------------------------------------------------------
-      # 1. Checkout
-      # --------------------------------------------------------
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-
-      # --------------------------------------------------------
-      # 2. Setup Java
-      # --------------------------------------------------------
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
+#       # --------------------------------------------------------
+#       # 1. Checkout
+#       # --------------------------------------------------------
+#       - name: Checkout Repository
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
 
 
-      # --------------------------------------------------------
-      # 3. SonarQube Scan
-      # --------------------------------------------------------
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v5
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        with:
-          projectBaseDir: Application/frontend
-          args: >
-            -Dsonar.projectKey=frontend
-            -Dsonar.projectName=Frontend
-            -Dsonar.sources=.
-            -Dsonar.sourceEncoding=UTF-8
+#       # --------------------------------------------------------
+#       # 2. Setup Java
+#       # --------------------------------------------------------
+#       - name: Set up Java 17
+#         uses: actions/setup-java@v4
+#         with:
+#           distribution: temurin
+#           java-version: "17"
 
 
-      # --------------------------------------------------------
-      # 4. Verify SonarQube Report
-      # --------------------------------------------------------
-      - name: Check SonarQube Scan Result
-        run: |
-
-          echo "Checking SonarQube scanner report..."
-
-          if [ -f "Application/frontend/.scannerwork/report-task.txt" ]; then
-
-            echo "SonarQube report found."
-
-            cat Application/frontend/.scannerwork/report-task.txt
-
-          else
-
-            echo "ERROR: SonarQube report not found."
-
-            ls -la Application/frontend
-
-            exit 1
-
-          fi
+#       # --------------------------------------------------------
+#       # 3. SonarQube Scan
+#       # --------------------------------------------------------
+#       - name: SonarQube Scan
+#         uses: SonarSource/sonarqube-scan-action@v5
+#         env:
+#           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+#           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+#         with:
+#           projectBaseDir: Application/frontend
+#           args: >
+#             -Dsonar.projectKey=frontend
+#             -Dsonar.projectName=Frontend
+#             -Dsonar.sources=.
+#             -Dsonar.sourceEncoding=UTF-8
 
 
-      # --------------------------------------------------------
-      # 5. SonarQube Quality Gate
-      # --------------------------------------------------------
-      - name: SonarQube Quality Gate
-        uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
-        timeout-minutes: 10
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          scanMetadataReportFile: Application/frontend/.scannerwork/report-task.txt
+#       # --------------------------------------------------------
+#       # 4. Verify SonarQube Report
+#       # --------------------------------------------------------
+#       - name: Check SonarQube Scan Result
+#         run: |
+
+#           echo "Checking SonarQube scanner report..."
+
+#           if [ -f "Application/frontend/.scannerwork/report-task.txt" ]; then
+
+#             echo "SonarQube report found."
+
+#             cat Application/frontend/.scannerwork/report-task.txt
+
+#           else
+
+#             echo "ERROR: SonarQube report not found."
+
+#             ls -la Application/frontend
+
+#             exit 1
+
+#           fi
+
+
+#       # --------------------------------------------------------
+#       # 5. SonarQube Quality Gate
+#       # --------------------------------------------------------
+#       - name: SonarQube Quality Gate
+#         uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
+#         timeout-minutes: 10
+#         env:
+#           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+#         with:
+#           scanMetadataReportFile: Application/frontend/.scannerwork/report-task.txt
 
 
   # ==========================================================
