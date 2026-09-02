@@ -203,30 +203,30 @@ jobs:
       # --------------------------------------------------------
       # 9. Deploy to Private EC2 using SSM
       # --------------------------------------------------------
-      - name: Deploy frontend to EC2
-        run: |
+      # - name: Deploy frontend to EC2
+      #   run: |
 
-          aws ssm send-command \
-            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
-            --document-name "AWS-RunShellScript" \
-            --comment "Deploy frontend Docker container" \
-            --parameters 'commands=[
-              "echo Logging into Amazon ECR...",
-              "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.registry }}",
+      #     aws ssm send-command \
+      #       --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+      #       --document-name "AWS-RunShellScript" \
+      #       --comment "Deploy frontend Docker container" \
+      #       --parameters 'commands=[
+      #         "echo Logging into Amazon ECR...",
+      #         "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.registry }}",
 
-              "echo Pulling latest frontend image...",
-              "docker pull ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}",
+      #         "echo Pulling latest frontend image...",
+      #         "docker pull ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}",
 
-              "echo Stopping existing frontend container...",
-              "docker stop ${{ env.CONTAINER_NAME }} || true",
+      #         "echo Stopping existing frontend container...",
+      #         "docker stop ${{ env.CONTAINER_NAME }} || true",
 
-              "echo Removing existing frontend container...",
-              "docker rm ${{ env.CONTAINER_NAME }} || true",
+      #         "echo Removing existing frontend container...",
+      #         "docker rm ${{ env.CONTAINER_NAME }} || true",
 
-              "echo Starting new frontend container...",
-              "docker run -d --name ${{ env.CONTAINER_NAME }} -p 8501:8501 ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}",
+      #         "echo Starting new frontend container...",
+      #         "docker run -d --name ${{ env.CONTAINER_NAME }} -p 8501:8501 ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}",
 
-              "echo Checking running containers...",
-              "docker ps"
-            ]' \
-            --region "${{ env.AWS_REGION }}"
+      #         "echo Checking running containers...",
+      #         "docker ps"
+      #       ]' \
+      #       --region "${{ env.AWS_REGION }}"
